@@ -5,23 +5,23 @@ server:
 
 redis:
   address: "localhost:6379"
-  password: ""  # Will be overridden by REDIS_PASSWORD env var
+  password: ""
   db: 0
   cache_ttl: 1h
 
 llm:
   endpoint: "https://api.openai.com/v1/chat/completions"
-  api_key: ""  # Will be overridden by LLM_API_KEY env var
+  api_key: ""  
   model: "gpt-3.5-turbo"
   max_tokens: 500
   timeout: 30s
 
 slm:
-  ollama_host: "http://localhost:11434"
-  model_name: "llama3.2:1b"
+  api_key: ""  
+  model_name: "mistralai/Mistral-7B-Instruct-v0.2" 
   max_concurrent: 10
   max_tokens: 200
-  timeout: 15s
+  timeout: 30s
 
 router:
   complexity_threshold: 0.65

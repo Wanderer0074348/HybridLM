@@ -6,7 +6,7 @@ import (
 	"sync"
 
 	"github.com/tmc/langchaingo/llms"
-	"github.com/tmc/langchaingo/llms/ollama"
+	"github.com/tmc/langchaingo/llms/huggingface"
 
 	"www.github.com/Wanderer0074348/HybridLM/src/config"
 	"www.github.com/Wanderer0074348/HybridLM/src/models"
@@ -20,13 +20,13 @@ type SLMEngine struct {
 }
 
 func NewSLMEngine(cfg *config.SLMConfig) (*SLMEngine, error) {
-	// Initialize Ollama with langchaingo
-	llm, err := ollama.New(
-		ollama.WithModel(cfg.ModelName),
-		ollama.WithServerURL(cfg.OllamaHost),
+	// Initialize HuggingFace Inference API
+	llm, err := huggingface.New(
+		huggingface.WithToken(cfg.APIKey),
+		huggingface.WithModel(cfg.ModelName),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Ollama client: %w", err)
+		return nil, fmt.Errorf("failed to create HuggingFace client: %w", err)
 	}
 
 	// Create worker pool for concurrent inference
@@ -63,13 +63,13 @@ func (e *SLMEngine) Infer(ctx context.Context, req *models.InferenceRequest) (st
 		temperature = 0.7
 	}
 
-	// Call options
+	// Call options for HuggingFace
 	callOptions := []llms.CallOption{
 		llms.WithTemperature(temperature),
 		llms.WithMaxTokens(e.config.MaxTokens),
 	}
 
-	// Generate response using unified interface (same as OpenAI!)
+	// Generate response using HuggingFace API
 	response, err := llms.GenerateFromSinglePrompt(
 		ctx,
 		e.llm,
@@ -77,7 +77,7 @@ func (e *SLMEngine) Infer(ctx context.Context, req *models.InferenceRequest) (st
 		callOptions...,
 	)
 	if err != nil {
-		return "", fmt.Errorf("Ollama generation failed: %w", err)
+		return "", fmt.Errorf("HuggingFace generation failed: %w", err)
 	}
 
 	return response, nil

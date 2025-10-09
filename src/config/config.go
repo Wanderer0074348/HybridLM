@@ -38,7 +38,7 @@ type LLMConfig struct {
 }
 
 type SLMConfig struct {
-	OllamaHost    string        `mapstructure:"ollama_host"`
+	APIKey        string        `mapstructure:"api_key"`
 	ModelName     string        `mapstructure:"model_name"`
 	MaxConcurrent int           `mapstructure:"max_concurrent"`
 	MaxTokens     int           `mapstructure:"max_tokens"`
@@ -62,7 +62,7 @@ func LoadConfig() (*Config, error) {
 
 	// Bind specific environment variables
 	viper.BindEnv("llm.api_key", "LLM_API_KEY")
-	viper.BindEnv("redis.password", "REDIS_PASSWORD")
+	viper.BindEnv("slm.api_key", "HUGGINGFACEHUB_API_TOKEN")
 
 	// Read config file (optional if not present)
 	if err := viper.ReadInConfig(); err != nil {
@@ -83,6 +83,10 @@ func LoadConfig() (*Config, error) {
 
 	if redisPass := os.Getenv("REDIS_PASSWORD"); redisPass != "" {
 		config.Redis.Password = redisPass
+	}
+
+	if hfToken := os.Getenv("HUGGINGFACEHUB_API_TOKEN"); hfToken != "" {
+		config.SLM.APIKey = hfToken
 	}
 
 	// Validate required fields

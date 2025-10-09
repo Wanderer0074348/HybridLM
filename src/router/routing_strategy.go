@@ -24,7 +24,6 @@ func (s *HybridRoutingStrategy) Decide(metrics *models.QueryMetrics) *models.Rou
 		ComplexityScore: metrics.Complexity,
 	}
 
-	// Multi-factor routing decision
 	if metrics.Complexity > s.config.ComplexityThreshold {
 		decision.UseLLM = true
 		decision.Reason = "High complexity query requires LLM reasoning"
@@ -46,7 +45,6 @@ func (s *HybridRoutingStrategy) Decide(metrics *models.QueryMetrics) *models.Rou
 		return decision
 	}
 
-	// Default to SLM for simple queries
 	decision.UseLLM = false
 	decision.Reason = "Simple query suitable for edge SLM"
 	decision.Confidence = 0.95

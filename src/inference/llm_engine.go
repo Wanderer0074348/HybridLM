@@ -17,7 +17,7 @@ type LLMClient struct {
 }
 
 func NewLLMClient(cfg *config.LLMConfig) (*LLMClient, error) {
-	// Initialize OpenAI with langchaingo
+
 	llm, err := openai.New(
 		openai.WithToken(cfg.APIKey),
 		openai.WithModel(cfg.Model),
@@ -33,25 +33,22 @@ func NewLLMClient(cfg *config.LLMConfig) (*LLMClient, error) {
 }
 
 func (c *LLMClient) Infer(ctx context.Context, req *models.InferenceRequest) (string, error) {
-	// Build prompt with context if provided
+
 	prompt := req.Query
 	if req.Context != "" {
 		prompt = fmt.Sprintf("Context: %s\n\nQuestion: %s", req.Context, req.Query)
 	}
 
-	// Set default temperature
 	temperature := float64(req.Temperature)
 	if temperature == 0 {
 		temperature = 0.7
 	}
 
-	// Call options
 	callOptions := []llms.CallOption{
 		llms.WithTemperature(temperature),
 		llms.WithMaxTokens(c.config.MaxTokens),
 	}
 
-	// Generate response using unified interface
 	response, err := llms.GenerateFromSinglePrompt(
 		ctx,
 		c.llm,
@@ -65,7 +62,6 @@ func (c *LLMClient) Infer(ctx context.Context, req *models.InferenceRequest) (st
 	return response, nil
 }
 
-// Streaming support
 func (c *LLMClient) InferStreaming(ctx context.Context, req *models.InferenceRequest, callback func(string) error) error {
 	prompt := req.Query
 	if req.Context != "" {
@@ -77,7 +73,6 @@ func (c *LLMClient) InferStreaming(ctx context.Context, req *models.InferenceReq
 		temperature = 0.7
 	}
 
-	// Streaming callback
 	streamingFunc := func(ctx context.Context, chunk []byte) error {
 		if len(chunk) > 0 {
 			return callback(string(chunk))

@@ -41,7 +41,6 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 
 	startTime := time.Now()
 
-	// Check cache first
 	cacheKey := h.router.GenerateCacheKey(&req)
 	cachedResp, err := h.cache.Get(c.Request.Context(), cacheKey)
 	if err == nil && cachedResp != nil {
@@ -51,7 +50,6 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		return
 	}
 
-	// Route query
 	decision, err := h.router.Route(c.Request.Context(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "routing failed"})
@@ -87,7 +85,6 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		Timestamp:     time.Now(),
 	}
 
-	// Cache the response
 	_ = h.cache.Set(c.Request.Context(), cacheKey, result)
 
 	c.JSON(http.StatusOK, result)

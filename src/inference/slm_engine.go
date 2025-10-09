@@ -20,7 +20,7 @@ type SLMEngine struct {
 }
 
 func NewSLMEngine(cfg *config.SLMConfig) (*SLMEngine, error) {
-	// Initialize HuggingFace Inference API
+
 	llm, err := huggingface.New(
 		huggingface.WithToken(cfg.APIKey),
 		huggingface.WithModel(cfg.ModelName),
@@ -29,7 +29,6 @@ func NewSLMEngine(cfg *config.SLMConfig) (*SLMEngine, error) {
 		return nil, fmt.Errorf("failed to create HuggingFace client: %w", err)
 	}
 
-	// Create worker pool for concurrent inference
 	workerPool := make(chan struct{}, cfg.MaxConcurrent)
 
 	return &SLMEngine{
@@ -40,7 +39,7 @@ func NewSLMEngine(cfg *config.SLMConfig) (*SLMEngine, error) {
 }
 
 func (e *SLMEngine) Infer(ctx context.Context, req *models.InferenceRequest) (string, error) {
-	// Acquire worker slot
+
 	select {
 	case e.workerPool <- struct{}{}:
 		defer func() { <-e.workerPool }()
@@ -51,25 +50,21 @@ func (e *SLMEngine) Infer(ctx context.Context, req *models.InferenceRequest) (st
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	// Build prompt
 	prompt := req.Query
 	if req.Context != "" {
 		prompt = fmt.Sprintf("Context: %s\n\nQuestion: %s", req.Context, req.Query)
 	}
 
-	// Set default temperature
 	temperature := float64(req.Temperature)
 	if temperature == 0 {
 		temperature = 0.7
 	}
 
-	// Call options for HuggingFace
 	callOptions := []llms.CallOption{
 		llms.WithTemperature(temperature),
 		llms.WithMaxTokens(e.config.MaxTokens),
 	}
 
-	// Generate response using HuggingFace API
 	response, err := llms.GenerateFromSinglePrompt(
 		ctx,
 		e.llm,
@@ -83,9 +78,8 @@ func (e *SLMEngine) Infer(ctx context.Context, req *models.InferenceRequest) (st
 	return response, nil
 }
 
-// Streaming support
 func (e *SLMEngine) InferStreaming(ctx context.Context, req *models.InferenceRequest, callback func(string) error) error {
-	// Acquire worker slot
+
 	select {
 	case e.workerPool <- struct{}{}:
 		defer func() { <-e.workerPool }()
@@ -106,7 +100,6 @@ func (e *SLMEngine) InferStreaming(ctx context.Context, req *models.InferenceReq
 		temperature = 0.7
 	}
 
-	// Streaming callback
 	streamingFunc := func(ctx context.Context, chunk []byte) error {
 		if len(chunk) > 0 {
 			return callback(string(chunk))

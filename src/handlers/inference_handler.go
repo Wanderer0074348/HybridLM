@@ -5,24 +5,22 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"www.github.com/Wanderer0074348/HybridLM/src/cache"
-	"www.github.com/Wanderer0074348/HybridLM/src/inference"
 	"www.github.com/Wanderer0074348/HybridLM/src/models"
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
 )
 
 type InferenceHandler struct {
 	router    *router.QueryRouter
-	slmEngine *inference.SLMEngine
-	llmClient *inference.LLMClient
-	cache     *cache.RedisCache
+	slmEngine models.SLMInferencer // Changed to interface
+	llmClient models.LLMInferencer // Changed to interface
+	cache     models.CacheStore    // Changed to interface
 }
 
 func NewInferenceHandler(
 	r *router.QueryRouter,
-	slm *inference.SLMEngine,
-	llm *inference.LLMClient,
-	c *cache.RedisCache,
+	slm models.SLMInferencer, // Changed to interface
+	llm models.LLMInferencer, // Changed to interface
+	c models.CacheStore, // Changed to interface
 ) *InferenceHandler {
 	return &InferenceHandler{
 		router:    r,
@@ -41,6 +39,7 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 
 	startTime := time.Now()
 
+	// Check cache first
 	cacheKey := h.router.GenerateCacheKey(&req)
 	cachedResp, err := h.cache.Get(c.Request.Context(), cacheKey)
 	if err == nil && cachedResp != nil {
@@ -50,6 +49,7 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		return
 	}
 
+	// Route query
 	decision, err := h.router.Route(c.Request.Context(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "routing failed"})
@@ -85,6 +85,7 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		Timestamp:     time.Now(),
 	}
 
+	// Cache the response
 	_ = h.cache.Set(c.Request.Context(), cacheKey, result)
 
 	c.JSON(http.StatusOK, result)

@@ -1,0 +1,29 @@
+server:
+  port: "8080"
+  read_timeout: 15s
+  write_timeout: 15s
+
+redis:
+  address: "localhost:6379"
+  password: ""  # Will be overridden by REDIS_PASSWORD env var
+  db: 0
+  cache_ttl: 1h
+
+llm:
+  endpoint: "https://api.openai.com/v1/chat/completions"
+  api_key: ""  # Will be overridden by LLM_API_KEY env var
+  model: "gpt-3.5-turbo"
+  max_tokens: 500
+  timeout: 30s
+
+slm:
+  ollama_host: "http://localhost:11434"
+  model_name: "llama3.2:1b"
+  max_concurrent: 10
+  max_tokens: 200
+  timeout: 15s
+
+router:
+  complexity_threshold: 0.65
+  latency_budget_ms: 500
+  cost_threshold_usd: 0.001

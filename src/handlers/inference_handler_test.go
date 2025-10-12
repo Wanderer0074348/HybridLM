@@ -29,8 +29,7 @@ func setupTestHandler() (*InferenceHandler, *mocks.MockLLMClient, *mocks.MockSLM
 		ComplexityThreshold: 0.65,
 	}
 	queryRouter := router.NewQueryRouter(cfg)
-
-	// Now using interfaces - this will work!
+	
 	handler := NewInferenceHandler(queryRouter, mockSLM, mockLLM, mockCache)
 
 	return handler, mockLLM, mockSLM, mockCache

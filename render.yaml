@@ -1,0 +1,46 @@
+services:
+  # Redis Database
+  - type: redis
+    name: HybridLM-Redis
+    plan: free # or starter for 256 MB
+    maxmemoryPolicy: allkeys-lru # Evict least recently used keys when full
+    ipAllowList: [] # Allow all IPs, or restrict to your API only
+
+  # Go API Backend
+  - type: web
+    name: hybridlm-api
+    runtime: go
+    region: oregon # Choose: oregon, frankfurt, singapore, ohio
+    plan: free # Free tier: 512 MB RAM, spins down after 15min inactivity
+    # plan: starter # $7/mo: 512 MB RAM, always on
+    branch: main
+    rootDir: api
+    buildCommand: go build -o bin/server cmd/main/main.go
+    startCommand: ./bin/server
+    healthCheckPath: /api/v1/health
+
+    envVars:
+      # API Keys (set these manually in Render dashboard for security)
+      - key: LLM_API_KEY
+        sync: false
+
+      - key: GROQ_API_KEY
+        sync: false
+
+      # Optional: Separate key for semantic cache (defaults to LLM_API_KEY if not set)
+      - key: SEMANTIC_CACHE_API_KEY
+        sync: false
+
+      # Redis Connection - Auto-linked from redis service
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: hybridlm-redis
+          property: connectionString
+
+      # Server Config
+      - key: PORT
+        value: 8080
+
+      - key: GIN_MODE
+        value: release

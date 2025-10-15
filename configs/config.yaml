@@ -9,6 +9,11 @@ redis:
   db: 0
   cache_ttl: 1h
 
+semantic_cache:
+  enabled: true
+  similarity_threshold: 0.85
+  api_key: ""
+
 llm:
   endpoint: "https://api.openai.com/v1/chat/completions"
   api_key: ""  

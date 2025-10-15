@@ -22,3 +22,19 @@ type CacheStore interface {
 	Delete(ctx context.Context, key string) error
 	Close() error
 }
+
+// SemanticCacheResult represents a cache result with similarity score
+type SemanticCacheResult struct {
+	Response   *InferenceResponse
+	Similarity float64
+	CacheKey   string
+}
+
+// SemanticCacheStore extends CacheStore with semantic similarity search
+type SemanticCacheStore interface {
+	CacheStore
+	// GetSimilar finds semantically similar cached queries
+	GetSimilar(ctx context.Context, query string, threshold float64) (*SemanticCacheResult, error)
+	// SetWithEmbedding stores a response with its query embedding
+	SetWithEmbedding(ctx context.Context, key string, query string, response *InferenceResponse) error
+}

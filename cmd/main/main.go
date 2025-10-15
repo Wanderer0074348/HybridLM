@@ -85,6 +85,22 @@ func main() {
 		redisCache,
 	)
 
+	if cfg.SemanticCache.Enabled {
+		if cfg.SemanticCache.APIKey == "" {
+			log.Println("⚠️  Semantic cache enabled but SEMANTIC_CACHE_API_KEY not set, using standard cache only")
+		} else {
+			semanticCache, err := cache.NewSemanticCache(&cfg.Redis, &cfg.SemanticCache)
+			if err != nil {
+				log.Printf("⚠️  Failed to initialize semantic cache: %v, falling back to standard cache", err)
+			} else {
+				inferenceHandler.SetSemanticCache(semanticCache, cfg.SemanticCache.SimilarityThreshold)
+				log.Printf("✓ Semantic cache enabled (threshold: %.2f)", cfg.SemanticCache.SimilarityThreshold)
+			}
+		}
+	} else {
+		log.Println("ℹ️  Semantic cache disabled, using standard exact-match cache")
+	}
+
 	v1 := r.Group("/api/v1")
 	{
 		v1.POST("/inference", inferenceHandler.HandleInference)

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,10 +11,13 @@ import (
 )
 
 type InferenceHandler struct {
-	router    *router.QueryRouter
-	slmEngine models.SLMInferencer // Changed to interface
-	llmClient models.LLMInferencer // Changed to interface
-	cache     models.CacheStore    // Changed to interface
+	router        *router.QueryRouter
+	slmEngine     models.SLMInferencer     // Changed to interface
+	llmClient     models.LLMInferencer     // Changed to interface
+	cache         models.CacheStore        // Changed to interface
+	semanticCache models.SemanticCacheStore // Semantic cache for similarity search
+	useSemanticCache bool
+	similarityThreshold float64
 }
 
 func NewInferenceHandler(
@@ -23,11 +27,21 @@ func NewInferenceHandler(
 	c models.CacheStore, // Changed to interface
 ) *InferenceHandler {
 	return &InferenceHandler{
-		router:    r,
-		slmEngine: slm,
-		llmClient: llm,
-		cache:     c,
+		router:              r,
+		slmEngine:           slm,
+		llmClient:           llm,
+		cache:               c,
+		semanticCache:       nil, // Will be set via SetSemanticCache if enabled
+		useSemanticCache:    false,
+		similarityThreshold: 0.85,
 	}
+}
+
+// SetSemanticCache enables semantic caching with the provided cache store
+func (h *InferenceHandler) SetSemanticCache(sc models.SemanticCacheStore, threshold float64) {
+	h.semanticCache = sc
+	h.useSemanticCache = true
+	h.similarityThreshold = threshold
 }
 
 func (h *InferenceHandler) HandleInference(c *gin.Context) {
@@ -39,7 +53,21 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 
 	startTime := time.Now()
 
-	// Check cache first
+	// Check semantic cache first if enabled
+	if h.useSemanticCache && h.semanticCache != nil {
+		semanticResult, err := h.semanticCache.GetSimilar(c.Request.Context(), req.Query, h.similarityThreshold)
+		if err == nil && semanticResult != nil {
+			// Found a semantically similar cached response
+			semanticResult.Response.CacheHit = true
+			semanticResult.Response.Latency = time.Since(startTime)
+			semanticResult.Response.RoutingReason = semanticResult.Response.RoutingReason +
+				" (semantic cache hit, similarity: " + formatFloat(semanticResult.Similarity) + ")"
+			c.JSON(http.StatusOK, semanticResult.Response)
+			return
+		}
+	}
+
+	// Fall back to exact cache check
 	cacheKey := h.router.GenerateCacheKey(&req)
 	cachedResp, err := h.cache.Get(c.Request.Context(), cacheKey)
 	if err == nil && cachedResp != nil {
@@ -86,9 +114,20 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 	}
 
 	// Cache the response
-	_ = h.cache.Set(c.Request.Context(), cacheKey, result)
+	if h.useSemanticCache && h.semanticCache != nil {
+		// Store with embedding for semantic similarity search
+		_ = h.semanticCache.SetWithEmbedding(c.Request.Context(), cacheKey, req.Query, result)
+	} else {
+		// Store with exact key only
+		_ = h.cache.Set(c.Request.Context(), cacheKey, result)
+	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// formatFloat formats a float64 to 3 decimal places
+func formatFloat(f float64) string {
+	return fmt.Sprintf("%.3f", f)
 }
 
 func (h *InferenceHandler) HealthCheck(c *gin.Context) {

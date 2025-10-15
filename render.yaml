@@ -1,7 +1,7 @@
 services:
   # Redis Database
   - type: redis
-    name: hybridlm-redis
+    name: HybridLM-Redis
     plan: free # or starter for 256 MB
     maxmemoryPolicy: allkeys-lru # Evict least recently used keys when full
     ipAllowList: [] # Allow all IPs, or restrict to your API only
@@ -30,11 +30,15 @@ services:
       - key: SEMANTIC_CACHE_API_KEY
         sync: false
 
+      # CORS - Allowed Origins (comma-separated)
+      - key: ALLOWED_ORIGINS
+        sync: false
+
       # Redis Connection - Auto-linked from redis service
       - key: REDIS_URL
         fromService:
           type: redis
-          name: hybridlm-redis
+          name: HybridLM-Redis
           property: connectionString
 
       # Server Config

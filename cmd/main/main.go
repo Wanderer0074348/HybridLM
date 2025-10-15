@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -140,10 +141,48 @@ func main() {
 }
 
 func corsMiddleware() gin.HandlerFunc {
+	// Get allowed origins from environment variable
+	// Default to localhost for development if not set
+	allowedOriginsEnv := os.Getenv("ALLOWED_ORIGINS")
+	var allowedOrigins []string
+
+	if allowedOriginsEnv != "" {
+		// Split by comma for multiple origins
+		allowedOrigins = strings.Split(allowedOriginsEnv, ",")
+		// Trim whitespace from each origin
+		for i := range allowedOrigins {
+			allowedOrigins[i] = strings.TrimSpace(allowedOrigins[i])
+		}
+	} else {
+		// Default for local development
+		allowedOrigins = []string{
+			"http://localhost:3000",
+			"http://localhost:3001",
+		}
+	}
+
 	return func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := c.Request.Header.Get("Origin")
+
+		// Check if the origin is allowed
+		allowed := false
+		for _, allowedOrigin := range allowedOrigins {
+			if origin == allowedOrigin {
+				allowed = true
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				break
+			}
+		}
+
+		// If origin is not allowed, don't set CORS headers
+		if !allowed {
+			c.AbortWithStatus(403)
+			return
+		}
+
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

@@ -37,12 +37,21 @@ type LLMConfig struct {
 	Timeout   time.Duration `mapstructure:"timeout"`
 }
 
+type SLMModelConfig struct {
+	Name     string  `mapstructure:"name"`
+	Endpoint string  `mapstructure:"endpoint"`
+	APIKey   string  `mapstructure:"api_key"`
+	Weight   float64 `mapstructure:"weight"` // For weighted voting in parallel mode
+}
+
 type SLMConfig struct {
-	APIKey        string        `mapstructure:"api_key"`
-	ModelName     string        `mapstructure:"model_name"`
-	MaxConcurrent int           `mapstructure:"max_concurrent"`
-	MaxTokens     int           `mapstructure:"max_tokens"`
-	Timeout       time.Duration `mapstructure:"timeout"`
+	Models         []SLMModelConfig `mapstructure:"models"`
+	Strategy       string           `mapstructure:"strategy"` // "parallel", "series", "hybrid"
+	MaxConcurrent  int              `mapstructure:"max_concurrent"`
+	MaxTokens      int              `mapstructure:"max_tokens"`
+	Timeout        time.Duration    `mapstructure:"timeout"`
+	AggregationFn  string           `mapstructure:"aggregation_fn"` // "voting", "longest", "weighted"
+	ChainThreshold float64          `mapstructure:"chain_threshold"` // Confidence threshold for chaining
 }
 
 type RouterConfig struct {
@@ -62,7 +71,6 @@ func LoadConfig() (*Config, error) {
 
 	// Bind specific environment variables
 	viper.BindEnv("llm.api_key", "LLM_API_KEY")
-	viper.BindEnv("slm.api_key", "HUGGINGFACEHUB_API_TOKEN")
 
 	// Read config file (optional if not present)
 	if err := viper.ReadInConfig(); err != nil {
@@ -85,8 +93,11 @@ func LoadConfig() (*Config, error) {
 		config.Redis.Password = redisPass
 	}
 
-	if hfToken := os.Getenv("HUGGINGFACEHUB_API_TOKEN"); hfToken != "" {
-		config.SLM.APIKey = hfToken
+	// Override API keys for all SLM models from GROQ_API_KEY
+	if groqKey := os.Getenv("GROQ_API_KEY"); groqKey != "" {
+		for i := range config.SLM.Models {
+			config.SLM.Models[i].APIKey = groqKey
+		}
 	}
 
 	// Validate required fields

@@ -19,11 +19,25 @@ import (
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
 )
 
-func main() {
+func init() {
 
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
+		log.Println("⚠️  No .env file found, using system environment variables")
+	} else {
+		log.Println("✅ Loaded .env file")
 	}
+}
+
+func main() {
+
+	if os.Getenv("LLM_API_KEY") == "" {
+		log.Fatal("❌ LLM_API_KEY not set in environment or .env file")
+	}
+	if os.Getenv("GROQ_API_KEY") == "" {
+		log.Fatal("❌ GROQ_API_KEY not set in environment or .env file")
+	}
+
+	log.Println("✅ Environment variables loaded successfully")
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -44,13 +58,16 @@ func main() {
 		log.Fatalf("Failed to initialize SLM engine: %v", err)
 	}
 	defer slmEngine.Close()
-	log.Printf("✓ HuggingFace SLM engine ready: %s", cfg.SLM.ModelName)
+	log.Printf("✓ SLM engine ready with %d models (%s strategy)", len(cfg.SLM.Models), cfg.SLM.Strategy)
+	for _, model := range cfg.SLM.Models {
+		log.Printf("  - %s (weight: %.1f)", model.Name, model.Weight)
+	}
 
 	llmClient, err := inference.NewLLMClient(&cfg.LLM)
 	if err != nil {
 		log.Fatalf("Failed to initialize LLM client: %v", err)
 	}
-	log.Printf("✓ OpenAI LLM client ready: %s", cfg.LLM.Model)
+	log.Printf("✓ LLM client ready: %s", cfg.LLM.Model)
 
 	queryRouter := router.NewQueryRouter(&cfg.Router)
 	log.Printf("✓ Query router initialized")

@@ -164,6 +164,12 @@ func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
 
+		// Allow requests without Origin header (e.g., health checks, curl, Postman, Render health checks)
+		if origin == "" {
+			c.Next()
+			return
+		}
+
 		// Check if the origin is allowed
 		allowed := false
 		for _, allowedOrigin := range allowedOrigins {

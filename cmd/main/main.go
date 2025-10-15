@@ -86,6 +86,9 @@ func main() {
 		redisCache,
 	)
 
+	// Set model names for cost calculation
+	inferenceHandler.SetModelNames(cfg.LLM.Model, cfg.SLM.Models[0].Name)
+
 	if cfg.SemanticCache.Enabled {
 		if cfg.SemanticCache.APIKey == "" {
 			log.Println("⚠️  Semantic cache enabled but SEMANTIC_CACHE_API_KEY not set, using standard cache only")

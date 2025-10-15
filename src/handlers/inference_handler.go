@@ -8,16 +8,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"www.github.com/Wanderer0074348/HybridLM/src/models"
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
+	"www.github.com/Wanderer0074348/HybridLM/src/utils"
 )
 
 type InferenceHandler struct {
-	router        *router.QueryRouter
-	slmEngine     models.SLMInferencer     // Changed to interface
-	llmClient     models.LLMInferencer     // Changed to interface
-	cache         models.CacheStore        // Changed to interface
-	semanticCache models.SemanticCacheStore // Semantic cache for similarity search
-	useSemanticCache bool
+	router              *router.QueryRouter
+	slmEngine           models.SLMInferencer     // Changed to interface
+	llmClient           models.LLMInferencer     // Changed to interface
+	cache               models.CacheStore        // Changed to interface
+	semanticCache       models.SemanticCacheStore // Semantic cache for similarity search
+	useSemanticCache    bool
 	similarityThreshold float64
+	llmModelName        string // e.g., "gpt-3.5-turbo"
+	slmModelName        string // e.g., "llama-3.1-8b-instant"
 }
 
 func NewInferenceHandler(
@@ -44,6 +47,12 @@ func (h *InferenceHandler) SetSemanticCache(sc models.SemanticCacheStore, thresh
 	h.similarityThreshold = threshold
 }
 
+// SetModelNames sets the model names for cost calculation
+func (h *InferenceHandler) SetModelNames(llmModel, slmModel string) {
+	h.llmModelName = llmModel
+	h.slmModelName = slmModel
+}
+
 func (h *InferenceHandler) HandleInference(c *gin.Context) {
 	var req models.InferenceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -62,6 +71,23 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 			semanticResult.Response.Latency = time.Since(startTime)
 			semanticResult.Response.RoutingReason = semanticResult.Response.RoutingReason +
 				" (semantic cache hit, similarity: " + formatFloat(semanticResult.Similarity) + ")"
+
+			// Recalculate cost metrics for cache hit (if not already present)
+			if semanticResult.Response.CostMetrics == nil {
+				specificModel := h.llmModelName
+				if semanticResult.Response.ModelUsed != "cloud-llm" {
+					specificModel = h.slmModelName
+				}
+				semanticResult.Response.CostMetrics = utils.CalculateCostMetrics(
+					req.Query,
+					semanticResult.Response.Response,
+					semanticResult.Response.ModelUsed,
+					specificModel,
+					true, // cache hit
+					h.useSemanticCache,
+				)
+			}
+
 			c.JSON(http.StatusOK, semanticResult.Response)
 			return
 		}
@@ -73,6 +99,23 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 	if err == nil && cachedResp != nil {
 		cachedResp.CacheHit = true
 		cachedResp.Latency = time.Since(startTime)
+
+		// Recalculate cost metrics for cache hit (if not already present)
+		if cachedResp.CostMetrics == nil {
+			specificModel := h.llmModelName
+			if cachedResp.ModelUsed != "cloud-llm" {
+				specificModel = h.slmModelName
+			}
+			cachedResp.CostMetrics = utils.CalculateCostMetrics(
+				req.Query,
+				cachedResp.Response,
+				cachedResp.ModelUsed,
+				specificModel,
+				true, // cache hit
+				h.useSemanticCache,
+			)
+		}
+
 		c.JSON(http.StatusOK, cachedResp)
 		return
 	}
@@ -104,6 +147,22 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		return
 	}
 
+	// Determine specific model name
+	specificModel := h.llmModelName
+	if !decision.UseLLM {
+		specificModel = h.slmModelName
+	}
+
+	// Calculate cost metrics
+	costMetrics := utils.CalculateCostMetrics(
+		req.Query,
+		response,
+		modelUsed,
+		specificModel,
+		false, // not a cache hit
+		h.useSemanticCache,
+	)
+
 	result := &models.InferenceResponse{
 		Response:      response,
 		ModelUsed:     modelUsed,
@@ -111,6 +170,7 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		Latency:       time.Since(startTime),
 		CacheHit:      false,
 		Timestamp:     time.Now(),
+		CostMetrics:   costMetrics,
 	}
 
 	// Cache the response

@@ -1,7 +1,7 @@
 services:
   # Redis Database
   - type: redis
-    name: HybridLM-Redis
+    name: hybridlm-redis
     plan: free # or starter for 256 MB
     maxmemoryPolicy: allkeys-lru # Evict least recently used keys when full
     ipAllowList: [] # Allow all IPs, or restrict to your API only
@@ -14,7 +14,6 @@ services:
     plan: free # Free tier: 512 MB RAM, spins down after 15min inactivity
     # plan: starter # $7/mo: 512 MB RAM, always on
     branch: main
-    rootDir: api
     buildCommand: go build -o bin/server cmd/main/main.go
     startCommand: ./bin/server
     healthCheckPath: /api/v1/health
@@ -35,7 +34,7 @@ services:
       - key: REDIS_URL
         fromService:
           type: redis
-          name: HybridLM-Redis
+          name: hybridlm-redis
           property: connectionString
 
       # Server Config

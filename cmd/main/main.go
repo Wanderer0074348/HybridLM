@@ -14,6 +14,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"www.github.com/Wanderer0074348/HybridLM/src/cache"
+	"www.github.com/Wanderer0074348/HybridLM/src/chat"
 	"www.github.com/Wanderer0074348/HybridLM/src/config"
 	"www.github.com/Wanderer0074348/HybridLM/src/handlers"
 	"www.github.com/Wanderer0074348/HybridLM/src/inference"
@@ -105,10 +106,29 @@ func main() {
 		log.Println("ℹ️  Semantic cache disabled, using standard exact-match cache")
 	}
 
+	// Initialize chat components
+	sessionStore := chat.NewSessionStore(redisCache.GetClient())
+	chatHandler := handlers.NewChatHandler(
+		queryRouter,
+		slmEngine,
+		llmClient,
+		redisCache,
+		sessionStore,
+	)
+	chatHandler.SetModelNames(cfg.LLM.Model, cfg.SLM.Models[0].Name)
+	log.Printf("✓ Chat system initialized with session management")
+
 	v1 := r.Group("/api/v1")
 	{
+		// Original inference endpoint (stateless)
 		v1.POST("/inference", inferenceHandler.HandleInference)
 		v1.GET("/health", inferenceHandler.HealthCheck)
+
+		// New chat endpoints (stateful, conversational)
+		v1.POST("/chat", chatHandler.HandleChat)
+		v1.GET("/chat/sessions", chatHandler.ListSessions)
+		v1.GET("/chat/sessions/:session_id", chatHandler.GetSession)
+		v1.DELETE("/chat/sessions/:session_id", chatHandler.DeleteSession)
 	}
 
 	srv := &http.Server{

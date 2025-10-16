@@ -68,3 +68,8 @@ func (c *RedisCache) Delete(ctx context.Context, key string) error {
 func (c *RedisCache) Close() error {
 	return c.client.Close()
 }
+
+// GetClient returns the underlying Redis client for direct access
+func (c *RedisCache) GetClient() *redis.Client {
+	return c.client
+}

@@ -13,11 +13,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 
+	"www.github.com/Wanderer0074348/HybridLM/src/auth"
 	"www.github.com/Wanderer0074348/HybridLM/src/cache"
 	"www.github.com/Wanderer0074348/HybridLM/src/chat"
 	"www.github.com/Wanderer0074348/HybridLM/src/config"
 	"www.github.com/Wanderer0074348/HybridLM/src/handlers"
 	"www.github.com/Wanderer0074348/HybridLM/src/inference"
+	"www.github.com/Wanderer0074348/HybridLM/src/middleware"
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
 )
 
@@ -37,6 +39,15 @@ func main() {
 	}
 	if os.Getenv("GROQ_API_KEY") == "" {
 		log.Fatal("❌ GROQ_API_KEY not set in environment or .env file")
+	}
+	if os.Getenv("GOOGLE_CLIENT_ID") == "" {
+		log.Fatal("❌ GOOGLE_CLIENT_ID not set in environment or .env file")
+	}
+	if os.Getenv("GOOGLE_CLIENT_SECRET") == "" {
+		log.Fatal("❌ GOOGLE_CLIENT_SECRET not set in environment or .env file")
+	}
+	if os.Getenv("SESSION_SECRET") == "" {
+		log.Fatal("❌ SESSION_SECRET not set in environment or .env file")
 	}
 
 	log.Println("✅ Environment variables loaded successfully")
@@ -107,28 +118,69 @@ func main() {
 	}
 
 	// Initialize chat components
-	sessionStore := chat.NewSessionStore(redisCache.GetClient())
+	chatSessionStore := chat.NewSessionStore(redisCache.GetClient())
 	chatHandler := handlers.NewChatHandler(
 		queryRouter,
 		slmEngine,
 		llmClient,
 		redisCache,
-		sessionStore,
+		chatSessionStore,
 	)
 	chatHandler.SetModelNames(cfg.LLM.Model, cfg.SLM.Models[0].Name)
 	log.Printf("✓ Chat system initialized with session management")
 
+	authConfig := &auth.Config{
+		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		GoogleClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		GoogleRedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		FrontendURL:        os.Getenv("FRONTEND_URL"),
+		SessionSecret:      os.Getenv("SESSION_SECRET"),
+		SessionDuration:    7 * 24 * 60 * 60,
+		CookieDomain:       os.Getenv("COOKIE_DOMAIN"),
+		CookieSecure:       os.Getenv("COOKIE_SECURE") == "true",
+		CookieSameSite:     os.Getenv("COOKIE_SAME_SITE"),
+	}
+
+	if authConfig.CookieSameSite == "" {
+		authConfig.CookieSameSite = "lax"
+	}
+
+	oauthConfig := auth.GetGoogleOAuthConfig(
+		authConfig.GoogleClientID,
+		authConfig.GoogleClientSecret,
+		authConfig.GoogleRedirectURL,
+	)
+
+	stateStore := auth.NewStateStore(redisCache.GetClient())
+	authSessionStore := auth.NewSessionStore(redisCache.GetClient(), time.Duration(authConfig.SessionDuration)*time.Second)
+	userStore := auth.NewUserStore(redisCache.GetClient())
+
+	authHandler := auth.NewHandler(oauthConfig, stateStore, authSessionStore, userStore, authConfig)
+	authMiddleware := middleware.NewAuthMiddleware(authSessionStore, userStore)
+
+	log.Printf("✓ Authentication system initialized")
+
 	v1 := r.Group("/api/v1")
 	{
-		// Original inference endpoint (stateless)
-		v1.POST("/inference", inferenceHandler.HandleInference)
 		v1.GET("/health", inferenceHandler.HealthCheck)
 
-		// New chat endpoints (stateful, conversational)
-		v1.POST("/chat", chatHandler.HandleChat)
-		v1.GET("/chat/sessions", chatHandler.ListSessions)
-		v1.GET("/chat/sessions/:session_id", chatHandler.GetSession)
-		v1.DELETE("/chat/sessions/:session_id", chatHandler.DeleteSession)
+		authRoutes := v1.Group("/auth")
+		{
+			authRoutes.GET("/login", authHandler.Login)
+			authRoutes.GET("/callback", authHandler.Callback)
+			authRoutes.POST("/logout", authHandler.Logout)
+			authRoutes.GET("/me", authMiddleware.RequireAuth(), authHandler.Me)
+		}
+
+		protected := v1.Group("")
+		protected.Use(authMiddleware.RequireAuth())
+		{
+			protected.POST("/inference", inferenceHandler.HandleInference)
+			protected.POST("/chat", chatHandler.HandleChat)
+			protected.GET("/chat/sessions", chatHandler.ListSessions)
+			protected.GET("/chat/sessions/:session_id", chatHandler.GetSession)
+			protected.DELETE("/chat/sessions/:session_id", chatHandler.DeleteSession)
+		}
 	}
 
 	srv := &http.Server{
@@ -209,7 +261,7 @@ func corsMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 

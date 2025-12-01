@@ -12,22 +12,51 @@ import (
 )
 
 type QueryRouter struct {
-	config   *config.RouterConfig
-	strategy RoutingStrategy
+	config      *config.RouterConfig
+	strategy    RoutingStrategy
+	mlStrategy  *MLRoutingStrategy
+	useMLRouter bool
 }
 
 func NewQueryRouter(cfg *config.RouterConfig) *QueryRouter {
 	return &QueryRouter{
-		config:   cfg,
-		strategy: NewHybridRoutingStrategy(cfg),
+		config:      cfg,
+		strategy:    NewHybridRoutingStrategy(cfg),
+		useMLRouter: false,
+	}
+}
+
+func NewQueryRouterWithML(cfg *config.RouterConfig, mlStrategy *MLRoutingStrategy) *QueryRouter {
+	return &QueryRouter{
+		config:      cfg,
+		strategy:    NewHybridRoutingStrategy(cfg),
+		mlStrategy:  mlStrategy,
+		useMLRouter: true,
 	}
 }
 
 func (r *QueryRouter) Route(ctx context.Context, req *models.InferenceRequest) (*models.RoutingDecision, error) {
+	if r.useMLRouter && r.mlStrategy != nil {
+		decision, _, _ := r.mlStrategy.DecideWithFeatures(ctx, req.Query, req.Context)
+		return decision, nil
+	}
+
 	metrics := r.analyzeQuery(req)
 	decision := r.strategy.Decide(metrics)
 
 	return decision, nil
+}
+
+func (r *QueryRouter) RouteWithFeatures(ctx context.Context, req *models.InferenceRequest) (*models.RoutingDecision, *models.QueryFeatures, string, error) {
+	if r.useMLRouter && r.mlStrategy != nil {
+		decision, features, abTestGroup := r.mlStrategy.DecideWithFeatures(ctx, req.Query, req.Context)
+		return decision, features, abTestGroup, nil
+	}
+
+	metrics := r.analyzeQuery(req)
+	decision := r.strategy.Decide(metrics)
+
+	return decision, nil, "control", nil
 }
 
 func (r *QueryRouter) analyzeQuery(req *models.InferenceRequest) *models.QueryMetrics {

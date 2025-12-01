@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"www.github.com/Wanderer0074348/HybridLM/src/middleware"
 	"www.github.com/Wanderer0074348/HybridLM/src/models"
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
 	"www.github.com/Wanderer0074348/HybridLM/src/utils"
@@ -13,14 +14,15 @@ import (
 
 type InferenceHandler struct {
 	router              *router.QueryRouter
-	slmEngine           models.SLMInferencer     // Changed to interface
-	llmClient           models.LLMInferencer     // Changed to interface
-	cache               models.CacheStore        // Changed to interface
-	semanticCache       models.SemanticCacheStore // Semantic cache for similarity search
+	slmEngine           models.SLMInferencer
+	llmClient           models.LLMInferencer
+	cache               models.CacheStore
+	semanticCache       models.SemanticCacheStore
 	useSemanticCache    bool
 	similarityThreshold float64
-	llmModelName        string // e.g., "gpt-3.5-turbo"
-	slmModelName        string // e.g., "llama-3.1-8b-instant"
+	llmModelName        string
+	slmModelName        string
+	routingLogger       *middleware.RoutingLogMiddleware
 }
 
 func NewInferenceHandler(
@@ -51,6 +53,11 @@ func (h *InferenceHandler) SetSemanticCache(sc models.SemanticCacheStore, thresh
 func (h *InferenceHandler) SetModelNames(llmModel, slmModel string) {
 	h.llmModelName = llmModel
 	h.slmModelName = slmModel
+}
+
+// SetRoutingLogger enables routing decision logging
+func (h *InferenceHandler) SetRoutingLogger(logger *middleware.RoutingLogMiddleware) {
+	h.routingLogger = logger
 }
 
 func (h *InferenceHandler) HandleInference(c *gin.Context) {
@@ -120,8 +127,8 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		return
 	}
 
-	// Route query
-	decision, err := h.router.Route(c.Request.Context(), &req)
+	// Route query with features
+	decision, features, abTestGroup, err := h.router.RouteWithFeatures(c.Request.Context(), &req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "routing failed"})
 		return
@@ -159,7 +166,7 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		response,
 		modelUsed,
 		specificModel,
-		false, // not a cache hit
+		false,
 		h.useSemanticCache,
 	)
 
@@ -171,6 +178,35 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		CacheHit:      false,
 		Timestamp:     time.Now(),
 		CostMetrics:   costMetrics,
+	}
+
+	// Log routing decision
+	if h.routingLogger != nil && features != nil {
+		userID, _ := c.Get("user_id")
+		userIDStr, _ := userID.(string)
+
+		perfMetrics := &models.PerformanceMetrics{
+			LatencyMs: int(result.Latency.Milliseconds()),
+			CostUSD:   costMetrics.TotalCost,
+			CacheHit:  false,
+			ModelUsed: specificModel,
+		}
+
+		decisionID, _ := h.routingLogger.LogDecision(
+			c.Request.Context(),
+			req.Query,
+			req.Context,
+			features,
+			decision,
+			abTestGroup,
+			perfMetrics,
+			userIDStr,
+			"",
+		)
+
+		if decisionID != "" {
+			c.Header("X-Decision-ID", decisionID)
+		}
 	}
 
 	// Cache the response

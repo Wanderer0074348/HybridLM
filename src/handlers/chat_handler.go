@@ -10,19 +10,21 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"www.github.com/Wanderer0074348/HybridLM/src/chat"
+	"www.github.com/Wanderer0074348/HybridLM/src/middleware"
 	"www.github.com/Wanderer0074348/HybridLM/src/models"
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
 	"www.github.com/Wanderer0074348/HybridLM/src/utils"
 )
 
 type ChatHandler struct {
-	queryRouter  *router.QueryRouter
-	slmEngine    models.SLMInferencer
-	llmClient    models.LLMInferencer
-	cache        models.CacheStore
-	sessionStore *chat.SessionStore
-	llmModelName string
-	slmModelName string
+	queryRouter   *router.QueryRouter
+	slmEngine     models.SLMInferencer
+	llmClient     models.LLMInferencer
+	cache         models.CacheStore
+	sessionStore  *chat.SessionStore
+	llmModelName  string
+	slmModelName  string
+	routingLogger *middleware.RoutingLogMiddleware
 }
 
 func NewChatHandler(
@@ -46,6 +48,10 @@ func NewChatHandler(
 func (h *ChatHandler) SetModelNames(llmModel, slmModel string) {
 	h.llmModelName = llmModel
 	h.slmModelName = slmModel
+}
+
+func (h *ChatHandler) SetRoutingLogger(logger *middleware.RoutingLogMiddleware) {
+	h.routingLogger = logger
 }
 
 // HandleChat handles conversational chat requests with session management

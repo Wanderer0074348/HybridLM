@@ -15,7 +15,9 @@ type QueryRouter struct {
 	config      *config.RouterConfig
 	strategy    RoutingStrategy
 	mlStrategy  *MLRoutingStrategy
+	rlStrategy  *RLRoutingStrategy
 	useMLRouter bool
+	useRLRouter bool
 }
 
 func NewQueryRouter(cfg *config.RouterConfig) *QueryRouter {
@@ -23,6 +25,7 @@ func NewQueryRouter(cfg *config.RouterConfig) *QueryRouter {
 		config:      cfg,
 		strategy:    NewHybridRoutingStrategy(cfg),
 		useMLRouter: false,
+		useRLRouter: false,
 	}
 }
 
@@ -32,10 +35,26 @@ func NewQueryRouterWithML(cfg *config.RouterConfig, mlStrategy *MLRoutingStrateg
 		strategy:    NewHybridRoutingStrategy(cfg),
 		mlStrategy:  mlStrategy,
 		useMLRouter: true,
+		useRLRouter: false,
+	}
+}
+
+func NewQueryRouterWithRL(cfg *config.RouterConfig, rlStrategy *RLRoutingStrategy) *QueryRouter {
+	return &QueryRouter{
+		config:      cfg,
+		strategy:    NewHybridRoutingStrategy(cfg),
+		rlStrategy:  rlStrategy,
+		useMLRouter: false,
+		useRLRouter: true,
 	}
 }
 
 func (r *QueryRouter) Route(ctx context.Context, req *models.InferenceRequest) (*models.RoutingDecision, error) {
+	if r.useRLRouter && r.rlStrategy != nil {
+		decision, _, _ := r.rlStrategy.DecideWithFeatures(ctx, req.Query, req.Context)
+		return decision, nil
+	}
+
 	if r.useMLRouter && r.mlStrategy != nil {
 		decision, _, _ := r.mlStrategy.DecideWithFeatures(ctx, req.Query, req.Context)
 		return decision, nil
@@ -48,6 +67,11 @@ func (r *QueryRouter) Route(ctx context.Context, req *models.InferenceRequest) (
 }
 
 func (r *QueryRouter) RouteWithFeatures(ctx context.Context, req *models.InferenceRequest) (*models.RoutingDecision, *models.QueryFeatures, string, error) {
+	if r.useRLRouter && r.rlStrategy != nil {
+		decision, features, abTestGroup := r.rlStrategy.DecideWithFeatures(ctx, req.Query, req.Context)
+		return decision, features, abTestGroup, nil
+	}
+
 	if r.useMLRouter && r.mlStrategy != nil {
 		decision, features, abTestGroup := r.mlStrategy.DecideWithFeatures(ctx, req.Query, req.Context)
 		return decision, features, abTestGroup, nil

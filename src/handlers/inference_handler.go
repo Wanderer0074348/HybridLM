@@ -23,6 +23,7 @@ type InferenceHandler struct {
 	llmModelName        string
 	slmModelName        string
 	routingLogger       *middleware.RoutingLogMiddleware
+	rlFeedbackCollector *RLFeedbackCollector
 }
 
 func NewInferenceHandler(
@@ -58,6 +59,11 @@ func (h *InferenceHandler) SetModelNames(llmModel, slmModel string) {
 // SetRoutingLogger enables routing decision logging
 func (h *InferenceHandler) SetRoutingLogger(logger *middleware.RoutingLogMiddleware) {
 	h.routingLogger = logger
+}
+
+// SetRLFeedbackCollector enables RL feedback collection
+func (h *InferenceHandler) SetRLFeedbackCollector(collector *RLFeedbackCollector) {
+	h.rlFeedbackCollector = collector
 }
 
 func (h *InferenceHandler) HandleInference(c *gin.Context) {
@@ -206,6 +212,18 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 
 		if decisionID != "" {
 			c.Header("X-Decision-ID", decisionID)
+
+			if h.rlFeedbackCollector != nil {
+				_ = h.rlFeedbackCollector.CollectFeedback(
+					c.Request.Context(),
+					decisionID,
+					req.Query,
+					response,
+					int(result.Latency.Milliseconds()),
+					costMetrics.TotalCost,
+					decision.UseLLM,
+				)
+			}
 		}
 	}
 

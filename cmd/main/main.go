@@ -24,6 +24,7 @@ import (
 	"www.github.com/Wanderer0074348/HybridLM/src/middleware"
 	"www.github.com/Wanderer0074348/HybridLM/src/ml"
 	"www.github.com/Wanderer0074348/HybridLM/src/repository"
+	"www.github.com/Wanderer0074348/HybridLM/src/rl"
 	"www.github.com/Wanderer0074348/HybridLM/src/router"
 )
 
@@ -90,15 +91,18 @@ func main() {
 	var routingRepo *repository.RoutingRepository
 	var modelRepo *repository.MLModelRepository
 	var abTestRepo *repository.ABTestRepository
-	var mlRoutingStrategy *router.MLRoutingStrategy
+	var rlRoutingStrategy *router.RLRoutingStrategy
 	var featureExtractor *features.FeatureExtractor
 	var trainer *ml.ModelTrainer
+	var onlineLearner *ml.OnlineLearner
+	var rewardModel *rl.RewardModel
+	var rlFeedbackCollector *handlers.RLFeedbackCollector
 
 	if cfg.MongoDB.URI != "" {
 		mongoDB, err = database.NewMongoDB(cfg.MongoDB.URI, cfg.MongoDB.Database)
 		if err != nil {
 			log.Printf("Warning: Failed to connect to MongoDB: %v", err)
-			log.Printf("ML features will be disabled")
+			log.Printf("ML/RL features will be disabled")
 		} else {
 			log.Printf("MongoDB connected: %s", cfg.MongoDB.Database)
 
@@ -128,34 +132,75 @@ func main() {
 				log.Printf("SLM complexity assessor initialized: %s", assessmentModel)
 			}
 
-			mlRoutingStrategy = router.NewMLRoutingStrategy(
-				&cfg.Router,
-				featureExtractor,
-				slmAssessor,
-				abTestRepo,
-			)
+			if cfg.RL.Enabled {
+				rlRoutingStrategy = router.NewRLRoutingStrategy(
+					&cfg.Router,
+					featureExtractor,
+					slmAssessor,
+					abTestRepo,
+					cfg.RL.ExplorationRate,
+				)
 
-			activeModel, err := modelRepo.GetActiveModel(context.Background())
-			if err == nil && activeModel != nil {
-				mlRoutingStrategy.LoadModel(activeModel)
-				log.Printf("Loaded ML model: %s (accuracy: %.2f%%)", activeModel.Version, activeModel.TrainingMetrics.Accuracy*100)
-			} else {
-				log.Printf("No active ML model found, using rule-based routing only")
+				activeModel, err := modelRepo.GetActiveModel(context.Background())
+				if err == nil && activeModel != nil {
+					rlRoutingStrategy.LoadModel(activeModel)
+					log.Printf("Loaded RL model: %s (accuracy: %.2f%%)", activeModel.Version, activeModel.TrainingMetrics.Accuracy*100)
+				} else {
+					log.Printf("No active model found for RL routing")
+				}
+
+				trainer = ml.NewModelTrainer(routingRepo, modelRepo, featureExtractor)
+				trainer.SetMinSamples(cfg.ML.MinTrainingSamples)
+				trainer.SetHyperparameters(cfg.ML.LearningRate, cfg.ML.Epochs, cfg.ML.TestRatio)
+				log.Printf("RL trainer initialized (min samples: %d)", cfg.ML.MinTrainingSamples)
+
+				if cfg.RL.BootstrapOnStart {
+					log.Printf("Generating bootstrap training data...")
+					bootstrap := ml.NewBootstrapDataGenerator(routingRepo, featureExtractor)
+					if err := bootstrap.GenerateBootstrapData(context.Background()); err != nil {
+						log.Printf("Warning: Failed to generate bootstrap data: %v", err)
+					} else {
+						log.Printf("Bootstrap data generated successfully, training initial model...")
+						model, err := trainer.Train(context.Background())
+						if err != nil {
+							log.Printf("Warning: Initial training failed: %v", err)
+						} else {
+							rlRoutingStrategy.LoadModel(model)
+							log.Printf("Initial RL model trained: %s (accuracy: %.2f%%)",
+								model.Version, model.TrainingMetrics.Accuracy*100)
+						}
+					}
+				}
+
+				if cfg.RL.UseLLMJudge {
+					rewardModel = rl.NewRewardModel(cfg.LLM.APIKey, cfg.RL.JudgeModel)
+					rlFeedbackCollector = handlers.NewRLFeedbackCollector(routingRepo, rewardModel)
+					log.Printf("RL reward model initialized with LLM judge: %s", cfg.RL.JudgeModel)
+				}
+
+				if cfg.RL.OnlineLearningEnabled {
+					onlineLearner = ml.NewOnlineLearner(
+						trainer,
+						routingRepo,
+						modelRepo,
+						featureExtractor,
+						cfg.ML.AutoRetrainThreshold,
+					)
+					go onlineLearner.Start(context.Background())
+					log.Printf("Online learning enabled (retraining every %d samples)", cfg.ML.AutoRetrainThreshold)
+				}
+
+				log.Printf("RL routing system initialized (exploration rate: %.2f)", cfg.RL.ExplorationRate)
 			}
-
-			trainer = ml.NewModelTrainer(routingRepo, modelRepo, featureExtractor)
-			trainer.SetMinSamples(cfg.ML.MinTrainingSamples)
-			trainer.SetHyperparameters(cfg.ML.LearningRate, cfg.ML.Epochs, cfg.ML.TestRatio)
-			log.Printf("ML trainer initialized (min samples: %d)", cfg.ML.MinTrainingSamples)
 		}
 	} else {
-		log.Printf("MongoDB URI not configured, ML features disabled")
+		log.Printf("MongoDB URI not configured, ML/RL features disabled")
 	}
 
 	var queryRouter *router.QueryRouter
-	if mlRoutingStrategy != nil {
-		queryRouter = router.NewQueryRouterWithML(&cfg.Router, mlRoutingStrategy)
-		log.Printf("ML-enhanced query router initialized")
+	if rlRoutingStrategy != nil {
+		queryRouter = router.NewQueryRouterWithRL(&cfg.Router, rlRoutingStrategy)
+		log.Printf("RL-enhanced query router initialized")
 	} else {
 		queryRouter = router.NewQueryRouter(&cfg.Router)
 		log.Printf("Standard query router initialized")
@@ -176,6 +221,11 @@ func main() {
 
 	// Set model names for cost calculation
 	inferenceHandler.SetModelNames(cfg.LLM.Model, cfg.SLM.Models[0].Name)
+
+	if rlFeedbackCollector != nil {
+		inferenceHandler.SetRLFeedbackCollector(rlFeedbackCollector)
+		log.Printf("RL feedback collector attached to inference handler")
+	}
 
 	if cfg.SemanticCache.Enabled {
 		if cfg.SemanticCache.APIKey == "" {

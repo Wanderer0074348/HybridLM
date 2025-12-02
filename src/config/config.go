@@ -19,6 +19,7 @@ type Config struct {
 	Router        RouterConfig        `mapstructure:"router"`
 	MongoDB       MongoDBConfig       `mapstructure:"mongodb"`
 	ML            MLConfig            `mapstructure:"ml"`
+	RL            RLConfig            `mapstructure:"reinforcement_learning"`
 	ABTesting     ABTestingConfig     `mapstructure:"ab_testing"`
 }
 
@@ -86,6 +87,16 @@ type MLConfig struct {
 	Epochs               int     `mapstructure:"epochs"`
 	TestRatio            float64 `mapstructure:"test_ratio"`
 	AutoRetrainThreshold int     `mapstructure:"auto_retrain_threshold"`
+}
+
+type RLConfig struct {
+	Enabled                   bool    `mapstructure:"enabled"`
+	UseLLMJudge               bool    `mapstructure:"use_llm_judge"`
+	JudgeModel                string  `mapstructure:"judge_model"`
+	ExplorationRate           float64 `mapstructure:"exploration_rate"`
+	OnlineLearningEnabled     bool    `mapstructure:"online_learning_enabled"`
+	OnlineCheckIntervalMinutes int    `mapstructure:"online_check_interval_minutes"`
+	BootstrapOnStart          bool    `mapstructure:"bootstrap_on_start"`
 }
 
 type ABTestingConfig struct {

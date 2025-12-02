@@ -18,6 +18,10 @@ func NewFeatureExtractor() *FeatureExtractor {
 			"explain", "analyze", "compare", "evaluate", "why",
 			"how does", "what if", "reasoning", "detailed",
 			"describe", "elaborate", "discuss", "assess",
+			"prove", "demonstrate", "justify", "argue",
+			"critique", "synthesize", "contrast", "deduce",
+			"debug", "optimize", "refactor", "implement",
+			"derive", "calculate", "solve", "compute",
 		},
 	}
 }
@@ -52,13 +56,27 @@ func (f *FeatureExtractor) Extract(query string, context string) models.QueryFea
 
 	hasCodeBlock := f.detectCodeBlock(query)
 	hasContext := len(context) > 0
+	hasMath := f.detectMathematical(query)
+	hasLogic := f.detectLogical(query)
 
 	lengthFactor := min(float64(tokenCount)/1000.0, 1.0)
 	diversityFactor := uniqueWordRatio
 	keywordFactor := keywordScore
 	punctuationFactor := min(punctuationDensity, 0.3)
 
-	complexityScore := (lengthFactor * 0.3) + (diversityFactor * 0.3) + (keywordFactor * 0.3) + (punctuationFactor * 0.1)
+	mathBoost := 0.0
+	if hasMath {
+		mathBoost = 0.2
+	}
+	logicBoost := 0.0
+	if hasLogic {
+		logicBoost = 0.15
+	}
+
+	complexityScore := (lengthFactor * 0.25) + (diversityFactor * 0.25) + (keywordFactor * 0.25) + (punctuationFactor * 0.1) + mathBoost + logicBoost
+	if complexityScore > 1.0 {
+		complexityScore = 1.0
+	}
 
 	return models.QueryFeatures{
 		TokenCount:         tokenCount,
@@ -172,6 +190,52 @@ func (f *FeatureExtractor) detectCodeBlock(text string) bool {
 	}
 
 	return false
+}
+
+func (f *FeatureExtractor) detectMathematical(text string) bool {
+	mathPatterns := []string{
+		"+", "-", "×", "÷", "=", "≠", "≤", "≥",
+		"∫", "∑", "∏", "√", "^",
+		"equation", "formula", "calculate", "solve",
+		"derivative", "integral", "theorem", "proof",
+		"matrix", "vector", "probability", "statistics",
+	}
+
+	lowerText := strings.ToLower(text)
+
+	mathCount := 0
+	for _, pattern := range mathPatterns {
+		if strings.Contains(lowerText, pattern) {
+			mathCount++
+		}
+	}
+
+	hasNumbers := regexp.MustCompile(`\d+`).MatchString(text)
+
+	return mathCount >= 2 || (mathCount >= 1 && hasNumbers)
+}
+
+func (f *FeatureExtractor) detectLogical(text string) bool {
+	logicalPatterns := []string{
+		"therefore", "thus", "hence", "consequently",
+		"because", "since", "as a result",
+		"if", "then", "else", "unless",
+		"implies", "entails", "follows that",
+		"assume", "given that", "suppose",
+		"contradict", "paradox", "fallacy",
+		"premise", "conclusion", "argument",
+	}
+
+	lowerText := strings.ToLower(text)
+
+	logicalCount := 0
+	for _, pattern := range logicalPatterns {
+		if strings.Contains(lowerText, pattern) {
+			logicalCount++
+		}
+	}
+
+	return logicalCount >= 2
 }
 
 func (f *FeatureExtractor) ToVector(features models.QueryFeatures) []float64 {

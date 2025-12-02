@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"log"
 	"math/rand"
+	"time"
 
 	"www.github.com/Wanderer0074348/HybridLM/src/config"
 	"www.github.com/Wanderer0074348/HybridLM/src/features"
@@ -45,17 +47,24 @@ func (s *MLRoutingStrategy) LoadModel(model *models.MLModel) {
 	s.useMLClassifier = true
 }
 
-func (s *MLRoutingStrategy) DecideWithFeatures(ctx context.Context, query string, context string) (*models.RoutingDecision, *models.QueryFeatures, string) {
-	features := s.featureExtractor.Extract(query, context)
+func (s *MLRoutingStrategy) DecideWithFeatures(ctx context.Context, query string, contextStr string) (*models.RoutingDecision, *models.QueryFeatures, string) {
+	features := s.featureExtractor.Extract(query, contextStr)
 
-	if s.useSLMAssessment {
-		assessment, err := s.slmAssessor.AssessComplexity(ctx, query)
+	if s.useSLMAssessment && s.slmAssessor != nil {
+		// Create a timeout context for SLM assessment (5 seconds max)
+		assessmentCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+
+		assessment, err := s.slmAssessor.AssessComplexity(assessmentCtx, query)
 		if err == nil {
 			features.SLMAssessment = "simple"
 			if assessment.IsComplex {
 				features.SLMAssessment = "complex"
 			}
 			features.SLMConfidence = assessment.Confidence
+		} else {
+			// Log error but continue without SLM assessment
+			log.Printf("SLM assessment failed (continuing without it): %v", err)
 		}
 	}
 
@@ -185,8 +194,8 @@ func NewAdaptiveRoutingStrategy(
 	}
 }
 
-func (s *AdaptiveRoutingStrategy) Decide(ctx context.Context, query string, context string) (*models.RoutingDecision, *models.QueryFeatures, string) {
-	return s.baseStrategy.DecideWithFeatures(ctx, query, context)
+func (s *AdaptiveRoutingStrategy) Decide(ctx context.Context, query string, contextStr string) (*models.RoutingDecision, *models.QueryFeatures, string) {
+	return s.baseStrategy.DecideWithFeatures(ctx, query, contextStr)
 }
 
 type EpsilonGreedyStrategy struct {
@@ -203,14 +212,14 @@ func NewEpsilonGreedyStrategy(mlStrategy *MLRoutingStrategy, epsilon float64) *E
 	}
 }
 
-func (s *EpsilonGreedyStrategy) Decide(ctx context.Context, query string, context string) (*models.RoutingDecision, *models.QueryFeatures, string) {
+func (s *EpsilonGreedyStrategy) Decide(ctx context.Context, query string, contextStr string) (*models.RoutingDecision, *models.QueryFeatures, string) {
 	if s.rand.Float64() < s.epsilon {
-		decision, features, group := s.mlStrategy.DecideWithFeatures(ctx, query, context)
+		decision, features, group := s.mlStrategy.DecideWithFeatures(ctx, query, contextStr)
 		decision.UseLLM = !decision.UseLLM
 		decision.Reason = fmt.Sprintf("Exploration: flipped decision (%s)", decision.Reason)
 		decision.Confidence = 0.5
 		return decision, features, group
 	}
 
-	return s.mlStrategy.DecideWithFeatures(ctx, query, context)
+	return s.mlStrategy.DecideWithFeatures(ctx, query, contextStr)
 }

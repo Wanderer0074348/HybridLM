@@ -243,15 +243,17 @@ func main() {
 		log.Println("Semantic cache disabled, using standard exact-match cache")
 	}
 	chatSessionStore := chat.NewSessionStore(redisCache.GetClient())
+	userSessionManager := chat.NewUserSessionManager(redisCache.GetClient(), chatSessionStore)
 	chatHandler := handlers.NewChatHandler(
 		queryRouter,
 		slmEngine,
 		llmClient,
 		redisCache,
 		chatSessionStore,
+		userSessionManager,
 	)
 	chatHandler.SetModelNames(cfg.LLM.Model, cfg.SLM.Models[0].Name)
-	log.Printf("Chat system initialized with session management")
+	log.Printf("Chat system initialized with session management and user history (max 3 sessions)")
 
 	authConfig := &auth.Config{
 		GoogleClientID:     os.Getenv("GOOGLE_CLIENT_ID"),

@@ -52,6 +52,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 
 		c.Set("user", user)
 		c.Set("session", session)
+		c.Set("user_id", user.ID)
 
 		if err := m.sessionStore.RefreshSession(c.Request.Context(), sessionID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to refresh session"})
@@ -94,6 +95,7 @@ func (m *AuthMiddleware) OptionalAuth() gin.HandlerFunc {
 		c.Set("session", session)
 		m.sessionStore.RefreshSession(c.Request.Context(), sessionID)
 
+		c.Set("user_id", user.ID)
 		c.Next()
 	}
 }

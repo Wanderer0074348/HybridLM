@@ -17,14 +17,15 @@ import (
 )
 
 type ChatHandler struct {
-	queryRouter   *router.QueryRouter
-	slmEngine     models.SLMInferencer
-	llmClient     models.LLMInferencer
-	cache         models.CacheStore
-	sessionStore  *chat.SessionStore
-	llmModelName  string
-	slmModelName  string
-	routingLogger *middleware.RoutingLogMiddleware
+	queryRouter        *router.QueryRouter
+	slmEngine          models.SLMInferencer
+	llmClient          models.LLMInferencer
+	cache              models.CacheStore
+	sessionStore       *chat.SessionStore
+	userSessionManager *chat.UserSessionManager
+	llmModelName       string
+	slmModelName       string
+	routingLogger      *middleware.RoutingLogMiddleware
 }
 
 func NewChatHandler(
@@ -33,15 +34,17 @@ func NewChatHandler(
 	llmClient models.LLMInferencer,
 	cache models.CacheStore,
 	sessionStore *chat.SessionStore,
+	userSessionManager *chat.UserSessionManager,
 ) *ChatHandler {
 	return &ChatHandler{
-		queryRouter:  queryRouter,
-		slmEngine:    slmEngine,
-		llmClient:    llmClient,
-		cache:        cache,
-		sessionStore: sessionStore,
-		llmModelName: "gpt-3.5-turbo",
-		slmModelName: "llama-3.1-8b-instant",
+		queryRouter:        queryRouter,
+		slmEngine:          slmEngine,
+		llmClient:          llmClient,
+		cache:              cache,
+		sessionStore:       sessionStore,
+		userSessionManager: userSessionManager,
+		llmModelName:       "gpt-3.5-turbo",
+		slmModelName:       "llama-3.1-8b-instant",
 	}
 }
 
@@ -213,6 +216,25 @@ func (h *ChatHandler) HandleChat(c *gin.Context) {
 		messageCount = updatedSession.MessageCount
 	}
 
+	// Track session for user (limit to last 3)
+	userID, exists := c.Get("user_id")
+	if exists && userID != nil {
+		userIDStr := userID.(string)
+		// Generate title from first user message if this is a new session
+		sessionTitle := chat.GenerateSessionTitle(req.Message)
+		if req.SessionID == "" {
+			// New session
+			if err := h.userSessionManager.AddUserSession(ctx, userIDStr, session.SessionID, sessionTitle); err != nil {
+				log.Printf("Failed to add user session: %v", err)
+			}
+		} else {
+			// Update existing session metadata
+			if err := h.userSessionManager.UpdateSessionMetadata(ctx, userIDStr, session.SessionID, messageCount); err != nil {
+				log.Printf("Failed to update session metadata: %v", err)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, models.ChatResponse{
 		SessionID:      session.SessionID,
 		Response:       response,
@@ -243,19 +265,50 @@ func (h *ChatHandler) GetSession(c *gin.Context) {
 // DeleteSession deletes a session
 func (h *ChatHandler) DeleteSession(c *gin.Context) {
 	sessionID := c.Param("session_id")
-
 	ctx := context.Background()
-	if err := h.sessionStore.DeleteSession(ctx, sessionID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete session"})
-		return
+
+	// Delete from user session manager if user is authenticated
+	userID, exists := c.Get("user_id")
+	if exists && userID != nil && h.userSessionManager != nil {
+		userIDStr := userID.(string)
+		if err := h.userSessionManager.DeleteUserSession(ctx, userIDStr, sessionID); err != nil {
+			log.Printf("Failed to delete user session: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete session"})
+			return
+		}
+	} else {
+		// Fallback to direct session store deletion
+		if err := h.sessionStore.DeleteSession(ctx, sessionID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete session"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Session deleted successfully"})
 }
 
-// ListSessions returns all active session IDs
+// ListSessions returns user-specific sessions (last 3)
 func (h *ChatHandler) ListSessions(c *gin.Context) {
 	ctx := context.Background()
+
+	// Get user-specific sessions if authenticated
+	userID, exists := c.Get("user_id")
+	if exists && userID != nil && h.userSessionManager != nil {
+		userIDStr := userID.(string)
+		sessions, err := h.userSessionManager.GetUserSessions(ctx, userIDStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list sessions"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"sessions": sessions,
+			"count":    len(sessions),
+		})
+		return
+	}
+
+	// Fallback to old behavior (all sessions)
 	sessionIDs, err := h.sessionStore.GetRecentSessions(ctx)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list sessions"})

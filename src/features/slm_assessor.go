@@ -20,7 +20,8 @@ type SLMComplexityAssessor struct {
 func NewSLMComplexityAssessor(apiKey, endpoint, model string) *SLMComplexityAssessor {
 	config := openai.DefaultConfig(apiKey)
 	if endpoint != "" {
-		config.BaseURL = endpoint + "/v1"
+		// Endpoint already includes /v1 path from config
+		config.BaseURL = endpoint
 	}
 
 	return &SLMComplexityAssessor{

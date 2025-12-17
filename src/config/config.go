@@ -17,6 +17,10 @@ type Config struct {
 	LLM           LLMConfig           `mapstructure:"llm"`
 	SLM           SLMConfig           `mapstructure:"slm"`
 	Router        RouterConfig        `mapstructure:"router"`
+	MongoDB       MongoDBConfig       `mapstructure:"mongodb"`
+	ML            MLConfig            `mapstructure:"ml"`
+	RL            RLConfig            `mapstructure:"reinforcement_learning"`
+	ABTesting     ABTestingConfig     `mapstructure:"ab_testing"`
 }
 
 type ServerConfig struct {
@@ -69,6 +73,37 @@ type RouterConfig struct {
 	CostThresholdUSD    float64 `mapstructure:"cost_threshold_usd"`
 }
 
+type MongoDBConfig struct {
+	URI      string `mapstructure:"uri"`
+	Database string `mapstructure:"database"`
+}
+
+type MLConfig struct {
+	Enabled              bool    `mapstructure:"enabled"`
+	UseSLMAssessment     bool    `mapstructure:"use_slm_assessment"`
+	SLMAssessmentModel   string  `mapstructure:"slm_assessment_model"`
+	MinTrainingSamples   int     `mapstructure:"min_training_samples"`
+	LearningRate         float64 `mapstructure:"learning_rate"`
+	Epochs               int     `mapstructure:"epochs"`
+	TestRatio            float64 `mapstructure:"test_ratio"`
+	AutoRetrainThreshold int     `mapstructure:"auto_retrain_threshold"`
+}
+
+type RLConfig struct {
+	Enabled                   bool    `mapstructure:"enabled"`
+	UseLLMJudge               bool    `mapstructure:"use_llm_judge"`
+	JudgeModel                string  `mapstructure:"judge_model"`
+	ExplorationRate           float64 `mapstructure:"exploration_rate"`
+	OnlineLearningEnabled     bool    `mapstructure:"online_learning_enabled"`
+	OnlineCheckIntervalMinutes int    `mapstructure:"online_check_interval_minutes"`
+	BootstrapOnStart          bool    `mapstructure:"bootstrap_on_start"`
+}
+
+type ABTestingConfig struct {
+	Enabled             bool    `mapstructure:"enabled"`
+	DefaultTrafficSplit float64 `mapstructure:"default_traffic_split"`
+}
+
 func LoadConfig() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -81,6 +116,7 @@ func LoadConfig() (*Config, error) {
 	// Bind specific environment variables
 	viper.BindEnv("llm.api_key", "LLM_API_KEY")
 	viper.BindEnv("semantic_cache.api_key", "SEMANTIC_CACHE_API_KEY")
+	viper.BindEnv("mongodb.uri", "MONGODB_URI")
 
 	// Read config file (optional if not present)
 	if err := viper.ReadInConfig(); err != nil {
@@ -97,6 +133,11 @@ func LoadConfig() (*Config, error) {
 	// Override with environment variables explicitly
 	if apiKey := os.Getenv("LLM_API_KEY"); apiKey != "" {
 		config.LLM.APIKey = apiKey
+	}
+
+	// MongoDB URI from environment
+	if mongoURI := os.Getenv("MONGODB_URI"); mongoURI != "" {
+		config.MongoDB.URI = mongoURI
 	}
 
 	// Parse REDIS_URL if provided (Render/Heroku format)

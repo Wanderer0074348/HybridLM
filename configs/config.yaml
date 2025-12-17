@@ -46,3 +46,30 @@ router:
   complexity_threshold: 0.65
   latency_budget_ms: 500
   cost_threshold_usd: 0.001
+
+mongodb:
+  uri: ""
+  database: "hybridlm"
+
+ml:
+  enabled: true
+  use_slm_assessment: true
+  slm_assessment_model: "llama-3.1-8b-instant"
+  min_training_samples: 50
+  learning_rate: 0.01
+  epochs: 1000
+  test_ratio: 0.2
+  auto_retrain_threshold: 100
+
+reinforcement_learning:
+  enabled: true
+  use_llm_judge: true
+  judge_model: "gpt-3.5-turbo"
+  exploration_rate: 0.1
+  online_learning_enabled: true
+  online_check_interval_minutes: 5
+  bootstrap_on_start: true
+
+ab_testing:
+  enabled: false
+  default_traffic_split: 0.5

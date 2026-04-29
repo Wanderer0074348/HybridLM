@@ -18,6 +18,7 @@ import (
 	"www.github.com/Wanderer0074348/HybridLM/src/chat"
 	"www.github.com/Wanderer0074348/HybridLM/src/config"
 	"www.github.com/Wanderer0074348/HybridLM/src/database"
+	"www.github.com/Wanderer0074348/HybridLM/src/demo/prreview"
 	"www.github.com/Wanderer0074348/HybridLM/src/features"
 	"www.github.com/Wanderer0074348/HybridLM/src/handlers"
 	"www.github.com/Wanderer0074348/HybridLM/src/inference"
@@ -306,10 +307,24 @@ func main() {
 			authRoutes.GET("/me", authMiddleware.RequireAuth(), authHandler.Me)
 		}
 
+		v1.POST("/inference", inferenceHandler.HandleInference)
+
+		prHandler := prreview.NewHandler(prreview.Config{
+			GitHubToken:  os.Getenv("GITHUB_TOKEN"),
+			Router:       queryRouter,
+			SLM:          slmEngine,
+			LLM:          llmClient,
+			LLMModelName: cfg.LLM.Model,
+			SLMModelName: cfg.SLM.Models[0].Name,
+		})
+		v1.GET("/demo/pr-review", prHandler.Stream)
+		v1.GET("/demo/issue-review", prHandler.StreamIssue)
+		log.Printf("PR review demo registered at GET /api/v1/demo/pr-review")
+		log.Printf("Issue review demo registered at GET /api/v1/demo/issue-review")
+
 		protected := v1.Group("")
 		protected.Use(authMiddleware.RequireAuth())
 		{
-			protected.POST("/inference", inferenceHandler.HandleInference)
 			protected.POST("/chat", chatHandler.HandleChat)
 			protected.GET("/chat/sessions", chatHandler.ListSessions)
 			protected.GET("/chat/sessions/:session_id", chatHandler.GetSession)

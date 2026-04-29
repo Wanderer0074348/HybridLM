@@ -17,7 +17,7 @@ semantic_cache:
 llm:
   endpoint: "https://api.openai.com/v1/chat/completions"
   api_key: ""
-  model: "gpt-3.5-turbo"
+  model: "gpt-5.5"
   max_tokens: 2048
   timeout: 30s
 
@@ -37,13 +37,17 @@ slm:
       endpoint: https://api.groq.com/openai/v1
       api_key: ""
       weight: 2.0
-    - name: mixtral-8x7b-32768
+    - name: openai/gpt-oss-20b
       endpoint: https://api.groq.com/openai/v1
       api_key: ""
       weight: 1.8
+    - name: meta-llama/llama-4-scout-17b-16e-instruct
+      endpoint: https://api.groq.com/openai/v1
+      api_key: ""
+      weight: 2.0
 
 router:
-  complexity_threshold: 0.65
+  complexity_threshold: 0.40
   latency_budget_ms: 500
   cost_threshold_usd: 0.001
 
@@ -64,7 +68,7 @@ ml:
 reinforcement_learning:
   enabled: true
   use_llm_judge: true
-  judge_model: "gpt-3.5-turbo"
+  judge_model: "gpt-5.4-mini"
   exploration_rate: 0.1
   online_learning_enabled: true
   online_check_interval_minutes: 5

@@ -41,7 +41,7 @@ func (lr *LogisticRegressionClassifier) Predict(features []float64) (bool, float
 
 	probability := sigmoid(z)
 
-	return probability >= 0.5, probability
+	return probability >= 0.35, probability
 }
 
 func (lr *LogisticRegressionClassifier) Train(X [][]float64, y []bool, learningRate float64, epochs int) error {

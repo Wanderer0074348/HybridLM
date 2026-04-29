@@ -43,7 +43,7 @@ func NewChatHandler(
 		cache:              cache,
 		sessionStore:       sessionStore,
 		userSessionManager: userSessionManager,
-		llmModelName:       "gpt-3.5-turbo",
+		llmModelName:       "gpt-5.5",
 		slmModelName:       "llama-3.1-8b-instant",
 	}
 }

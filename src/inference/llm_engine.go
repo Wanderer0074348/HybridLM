@@ -3,6 +3,7 @@ package inference
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
@@ -10,6 +11,26 @@ import (
 	"www.github.com/Wanderer0074348/HybridLM/src/config"
 	"www.github.com/Wanderer0074348/HybridLM/src/models"
 )
+
+func supportsCustomTemperature(model string) bool {
+	m := strings.ToLower(model)
+	return !strings.HasPrefix(m, "gpt-5") && !strings.HasPrefix(m, "o1") && !strings.HasPrefix(m, "o3")
+}
+
+func (c *LLMClient) buildCallOptions(req *models.InferenceRequest, extra ...llms.CallOption) []llms.CallOption {
+	temperature := 1.0
+	if supportsCustomTemperature(c.config.Model) {
+		temperature = float64(req.Temperature)
+		if temperature == 0 {
+			temperature = 0.7
+		}
+	}
+	opts := []llms.CallOption{
+		llms.WithTemperature(temperature),
+		llms.WithMaxTokens(c.config.MaxTokens),
+	}
+	return append(opts, extra...)
+}
 
 type LLMClient struct {
 	config *config.LLMConfig
@@ -39,21 +60,11 @@ func (c *LLMClient) Infer(ctx context.Context, req *models.InferenceRequest) (st
 		prompt = fmt.Sprintf("Context: %s\n\nQuestion: %s", req.Context, req.Query)
 	}
 
-	temperature := float64(req.Temperature)
-	if temperature == 0 {
-		temperature = 0.7
-	}
-
-	callOptions := []llms.CallOption{
-		llms.WithTemperature(temperature),
-		llms.WithMaxTokens(c.config.MaxTokens),
-	}
-
 	response, err := llms.GenerateFromSinglePrompt(
 		ctx,
 		c.llm,
 		prompt,
-		callOptions...,
+		c.buildCallOptions(req)...,
 	)
 	if err != nil {
 		return "", fmt.Errorf("OpenAI generation failed: %w", err)
@@ -68,12 +79,7 @@ func (c *LLMClient) InferStreaming(ctx context.Context, req *models.InferenceReq
 		prompt = fmt.Sprintf("Context: %s\n\nQuestion: %s", req.Context, req.Query)
 	}
 
-	temperature := float64(req.Temperature)
-	if temperature == 0 {
-		temperature = 0.7
-	}
-
-	streamingFunc := func(ctx context.Context, chunk []byte) error {
+	streamingFunc := func(_ context.Context, chunk []byte) error {
 		if len(chunk) > 0 {
 			return callback(string(chunk))
 		}
@@ -84,9 +90,7 @@ func (c *LLMClient) InferStreaming(ctx context.Context, req *models.InferenceReq
 		ctx,
 		c.llm,
 		prompt,
-		llms.WithTemperature(temperature),
-		llms.WithMaxTokens(c.config.MaxTokens),
-		llms.WithStreamingFunc(streamingFunc),
+		c.buildCallOptions(req, llms.WithStreamingFunc(streamingFunc))...,
 	)
 
 	return err

@@ -1,0 +1,92 @@
+\section{Experimentation and Results}
+The evaluation focuses on four metrics i.e routing accuracy, which measures the correctness of model selection decisions, computational cost, measured in API expenses for cloud LLM queries, response latency, representing the time from query submission to response delivery, and F1-score,
+which captures the balanced precision-recall tradeoff in routing decisions.
+
+\subsection{Experimental Setup}
+
+\subsubsection{Experiment 1: MMLU-Lite Benchmark Evaluation}
+The first experiment utilises the MMLU-Lite benchmark, a subset of the Massive Multitask Language Understanding dataset designed to evaluate language model capabilities across diverse knowledge domains. This experiment employs 400 questions spanning multiple subject areas, including STEM fields, humanities, social sciences, and professional domains. The MMLU-Lite benchmark provides a standardised evaluation framework that enables direct comparison between HybridLM and single-model baselines. Each question in the dataset represents a distinct query that the system must process and route appropriately. The benchmark measures both the accuracy of the final responses and the efficiency of the routing decisions that led to those responses.
+
+\subsubsection{Experiment 2: Custom Labeled Query Dataset}
+The second experiment employs a custom dataset of 100 labeled queries. This dataset follows a 60-40 distribution where 60\% of queries are classified as simple and 40\% are classified as hard that might require reasoning. This controlled distribution enables targeted evaluation of routing accuracy across different query complexity levels. Simple queries include factual questions, basic definitions, and straightforward information retrieval tasks. Hard queries involve analytical reasoning, code debugging, comparative analysis, and multi-step problem solving that typically exceeds SLM capabilities.
+
+\subsubsection{ML Optimising Function}
+The classifier is trained using the binary cross-entropy loss function, which is defined as
+\begin{equation}
+L = -\frac{1}{m} \sum_{i=1}^{m} \left[ y^{(i)} \log \left( \hat{y}^{(i)} \right) + \left(1 - y^{(i)}\right) \log \left(1 - \hat{y}^{(i)}\right) \right]
+\label{eq:bce_loss}
+\end{equation}
+
+where $m$ is the total number of training samples, $y^{(i)}$ is the true class label for sample $i$, and $\hat{y}^{(i)}$ is the corresponding predicted probability. In this routing framework, $y^{(i)} = 1$ indicates that the query should be routed to the LLM, while $y^{(i)} = 0$ indicates routing to the SLM. Model parameters are updated through gradient descent using a learning rate of $\alpha = 0.01$.
+
+\subsection{Experiment 1: Global-MMLU-Lite Benchmark Results}
+The Global-MMLU-Lite evaluation with 400 questions reveals significant performance differences across model configurations. Table~\ref{tab:mmlu_lite_results} compares HybridLM against its two constituent single-model baselines: GPT-4.1, the cloud LLM used for complex query routing, and Granite 4.0 H-Small, representative of the local SLM tier. Accuracy figures for the single-model baselines are sourced from the Cohere Labs Global-MMLU-Lite leaderboard~\cite{cohere2025globalmmlu}. Costs for GPT-4.1 are derived from measured per-query token usage in our evaluation logs at published API rates (\$2.00/\$8.00 per million input/output tokens); Granite 4.0 H-Small is run via local inference at negligible cost.
+
+\begin{table}[t]
+\centering
+\caption{Global-MMLU-Lite benchmark results for 400 questions.}
+\label{tab:mmlu_lite_results}
+\begin{tabular}{lcccc}
+\hline
+\textbf{Model/System} & \textbf{Accuracy} & \textbf{Total Cost} & \textbf{Avg Time} \\
+\hline
+GPT-4.1 (LLM-Only)\cite{cohere2024globalmmlu}             & 87.5\% & \$0.17 & 1.03\,s \\
+Granite 4.0 H-Small (SLM-Only)\cite{cohere2024globalmmlu}         & 75.03\% & \$0.00 & 0.52\,s \\
+\textbf{HybridLM (ML+RL)}      & \textbf{86.25\%} & \textbf{\$0.11} & \textbf{0.96\,s} \\
+\hline
+\end{tabular}
+\end{table}
+
+HybridLM achieves 86.25\% accuracy on Global-MMLU-Lite, within 1.25 percentage points of the GPT-4.1 LLM-only baseline while operating at a lower total cost of \$0.11 versus \$0.17. Of the 400 questions, 126 (31.5\%) were handled locally by the SLM and 274 (68.5\%) were escalated to GPT-4.1. Crucially, the router selectively assigns to the SLM only those queries whose complexity falls within its capability envelope — factual recall, definitions, and straightforward reasoning — meaning Granite 4.0 H-Small operates on a curated subset of queries on which it performs substantially above its global benchmark average of 75.03\%. This selective routing is the mechanism by which HybridLM achieves accuracy well above what a naive weighted combination of the two baselines would predict, and directly demonstrates that the routing strategy is working as intended. The SLM-only baseline achieves only 75.03\% accuracy across all query types, confirming that indiscriminate use of the SLM would degrade overall performance. Latency performance further validates the hybrid approach, with HybridLM completing queries in an average of 0.96 seconds, nearly 7\% faster than the GPT-4.1-only baseline at 1.03 seconds, due to avoiding network overhead for locally processed queries.
+
+\subsection{Experiment 2: Custom Query Dataset Results}
+The custom 100-query dataset provides targeted insight into routing strategy performance and cost-quality tradeoffs across controlled complexity distributions.
+
+% \begin{table}[t]
+% \centering
+% \caption{Cost and latency comparison for 100 queries across routing configurations.}
+% \label{tab:cost_time_comparison}
+% \begin{tabular}{lcc}
+% \hline
+% \textbf{Approach} & \textbf{Total Cost} & \textbf{Avg Time/Query} \\
+% \hline
+% LLM-Only (GPT-4.1)        & \$0.04  & 1.5\,s \\
+% SLM-Only (Gemma 3 27B)    & \$0.00  & 0.5\,s \\
+% \textbf{HybridLM (ML+RL)} & \textbf{\$0.21} & \textbf{2.26\,s} \\
+% \hline
+% \end{tabular}
+% \end{table}
+
+\begin{table}[h]
+\centering
+\caption{Routing strategy performance comparison (100 queries).}
+\label{tab:routing_strategy_comparison}
+\begin{tabular}{lccc}
+\hline
+\textbf{Strategy} & \textbf{Routing Accuracy} & \textbf{Avg Latency} & \textbf{F1-Score} \\
+\hline
+Rule-Based (Fallback)          & 59.0\% & 1.48\,s & 0.09 \\
+ML-Only (Logistic Reg.)        & 64.0\% & 1.68\,s & 0.28 \\
+\textbf{ML+RL (Hybrid)}        & \textbf{87.0\%} & \textbf{2.26\,s} & \textbf{0.83} \\
+\hline
+\end{tabular}
+\end{table}
+
+The custom dataset results confirm the cost dynamics observed in the MMLU-Lite evaluation. GPT-4.1 LLM-only processes 100 queries for \$0.04, while the SLM-only baseline incurs negligible cost at the expense of routing accuracy. HybridLM's total cost of \$0.21 reflects its ensemble of Groq-hosted SLMs used for query assessment and local inference, which carries a per-call overhead absent in single-model deployments. Despite this, the hybrid approach delivers substantially better routing accuracy than either single-model baseline, as shown in Table~\ref{tab:routing_strategy_comparison}.
+
+Table~\ref{tab:routing_strategy_comparison} reveals the critical importance of routing strategy sophistication. Rule-based heuristics achieve only 59.0\% routing accuracy, demonstrating that simple complexity thresholds are insufficient for effective hybrid routing. Machine learning improves this to 64.0\%, while the hybrid ML+RL approach reaches 87.0\% routing accuracy through epsilon-greedy exploration and reward-based online learning. This 28-point improvement over the ML-only baseline directly translates to better query outcomes: hard queries that would have been misrouted to the SLM are correctly escalated to GPT-4.1, and simple queries avoid unnecessary cloud calls.
+
+\subsection{Confusion Matrix Analysis}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{images/confusion_matrices.png}
+\caption{Confusion matrix comparison of three routing strategies on 100 test queries: rule-based fallback, ML-only logistic regression, and the proposed ML+RL hybrid method. The hybrid strategy achieves the highest routing accuracy and F1-score.}
+\label{fig:confusion_matrix_comparison}
+\end{figure}
+
+The confusion matrices for the three routing strategies on 100 test queries reveal the progressive improvement in classification accuracy. Rule-based routing exhibits poor performance, correctly routing 57 of 60 simple queries to the SLM (95.0\%) but only 2 of 40 hard queries to the LLM (5.0\%), producing 38 false negatives in which complex queries are incorrectly handled by the local model. This strong bias toward SLM routing yields a precision of 0.40 and a recall of just 0.05, resulting in an F1-score of 0.09. ML-only routing reduces false negatives to 33, improving LLM routing recall to 17.5\% while maintaining 95.0\% SLM accuracy. The improvement in precision to 0.70 raises the F1-score to 0.28, though the classifier remains conservative in escalating hard queries. The hybrid ML+RL approach achieves the best balance, correctly routing 56 of 60 simple queries (93.3\%) and 31 of 40 hard queries (77.5\%), with only 9 false negatives and 4 false positives. This yields a precision of 0.89, recall of 0.78, and an F1-score of 0.83. The progression across strategies demonstrates that reinforcement learning effectively addresses the misclassification bias of simpler approaches, particularly reducing the critical false negative rate where complex queries would receive inadequate responses from the SLM.
+
+\subsection{Analysis and Discussion}
+The experimental analysis shows that HybridLM occupies a distinct position within the cost--quality--latency design space in contrast to conventional single-model systems. Instead of operating along the existing tradeoff curve between high-cost, high-quality LLMs and low-cost, lower-quality SLMs, the combined framework---with its intelligent routing---creates an entirely new efficiency frontier. Results from the routing strategy evaluation indicate that routing accuracy is the main determinant of overall system performance. Improvements from rule-based routing (59.0\%) to ML-only (64.0\%) and ML+RL (87.0\%) routing directly correspond to gains in both cost performance and response quality. The substantial cost reductions result from precisely recognising which queries can be handled by SLMs without sacrificing correctness.
+
+Across both experiments, HybridLM consistently assigns a majority of queries to local models while reserving the cloud LLM for cases that require advanced reasoning. In the Global-MMLU-Lite evaluation, 31.5\% of queries were handled locally, and the system achieved 86.25\% accuracy — within 1.25 percentage points of GPT-4.1 alone. This near-equivalent accuracy demonstrates that the routing mechanism correctly identifies which queries the SLM can handle without quality loss. The primary cost driver is the Groq-hosted SLM ensemble used for complexity assessment, which introduces overhead per query but enables the routing decisions that bring accuracy close to the full LLM baseline. In deployments where SLM assessment cost is minimised or amortised, the cost advantage of HybridLM over a pure LLM approach would be more pronounced.

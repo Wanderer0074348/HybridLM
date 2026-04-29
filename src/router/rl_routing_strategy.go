@@ -55,6 +55,8 @@ func (s *RLRoutingStrategy) LoadModel(model *models.MLModel) {
 func (s *RLRoutingStrategy) DecideWithFeatures(ctx context.Context, query string, contextStr string) (*models.RoutingDecision, *models.QueryFeatures, string) {
 	features := s.featureExtractor.Extract(query, contextStr)
 
+	log.Printf("[RL] useSLMAssessment=%v slmAssessor=%v useMLClassifier=%v", s.useSLMAssessment, s.slmAssessor != nil, s.useMLClassifier)
+
 	if s.useSLMAssessment && s.slmAssessor != nil {
 		assessmentCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -66,9 +68,12 @@ func (s *RLRoutingStrategy) DecideWithFeatures(ctx context.Context, query string
 				features.SLMAssessment = "complex"
 			}
 			features.SLMConfidence = assessment.Confidence
+			log.Printf("[RL] SLM assessment: %s (confidence=%.2f)", features.SLMAssessment, features.SLMConfidence)
 		} else {
-			log.Printf("SLM assessment failed: %v", err)
+			log.Printf("[RL] SLM assessment failed: %v", err)
 		}
+	} else {
+		log.Printf("[RL] SLM assessment skipped (useSLMAssessment=%v, assessor=%v)", s.useSLMAssessment, s.slmAssessor != nil)
 	}
 
 	abTestGroup := "rl_control"
@@ -81,6 +86,8 @@ func (s *RLRoutingStrategy) DecideWithFeatures(ctx context.Context, query string
 
 	decision := s.makeDecision(features, abTestGroup)
 
+	log.Printf("[RL] decision: useLLM=%v reason=%q confidence=%.2f", decision.UseLLM, decision.Reason, decision.Confidence)
+
 	return decision, &features, abTestGroup
 }
 
@@ -89,39 +96,58 @@ func (s *RLRoutingStrategy) makeDecision(features models.QueryFeatures, abTestGr
 		ComplexityScore: features.ComplexityScore,
 	}
 
-	if !s.useMLClassifier {
-		decision.UseLLM = true
-		decision.Reason = "No trained model available, routing to LLM for safety"
-		decision.Confidence = 0.5
-		return decision
-	}
-
+	// RL exploration: randomly try alternate routes so the online learner
+	// can observe outcomes and improve the model over time.
 	shouldExplore := s.rand.Float64() < s.explorationRate
 	if shouldExplore {
 		decision.UseLLM = s.rand.Float64() < 0.5
-		decision.Reason = fmt.Sprintf("Exploration: random routing (ε=%.2f)", s.explorationRate)
+		decision.Reason = fmt.Sprintf("RL exploration (ε=%.2f)", s.explorationRate)
 		decision.Confidence = 0.3
+		log.Printf("[RL] exploration triggered → useLLM=%v", decision.UseLLM)
 		return decision
 	}
 
-	featureVector := s.featureExtractor.ToVector(features)
-	useLLM, confidence := s.classifier.Predict(featureVector)
-
-	decision.UseLLM = useLLM
-	decision.Confidence = confidence
-
-	if useLLM {
-		decision.Reason = fmt.Sprintf("ML model predicts LLM needed (confidence: %.2f)", confidence)
-	} else {
-		decision.Reason = fmt.Sprintf("ML model predicts SLM sufficient (confidence: %.2f)", confidence)
-	}
-
-	if features.SLMAssessment == "complex" && features.SLMConfidence > 0.8 {
-		decision.UseLLM = true
-		decision.Reason = fmt.Sprintf("SLM assessor strongly indicates complexity (%.2f)", features.SLMConfidence)
+	// SLM assessor is the primary semantic signal — it actually reads the query.
+	// High confidence SLM decisions are trusted directly.
+	if features.SLMAssessment != "" && features.SLMConfidence >= 0.75 {
+		decision.UseLLM = features.SLMAssessment == "complex"
 		decision.Confidence = features.SLMConfidence
+		decision.Reason = fmt.Sprintf("SLM assessor: %s (confidence: %.2f)", features.SLMAssessment, features.SLMConfidence)
+		return decision
 	}
 
+	// Borderline SLM confidence (0.45–0.75): defer to ML classifier if available.
+	if s.useMLClassifier && features.SLMAssessment != "" {
+		featureVector := s.featureExtractor.ToVector(features)
+		useLLM, confidence := s.classifier.Predict(featureVector)
+		decision.UseLLM = useLLM
+		decision.Confidence = confidence
+		if useLLM {
+			decision.Reason = fmt.Sprintf("ML classifier (borderline SLM): LLM (%.2f)", confidence)
+		} else {
+			decision.Reason = fmt.Sprintf("ML classifier (borderline SLM): SLM (%.2f)", confidence)
+		}
+		return decision
+	}
+
+	// No SLM assessor ran — fall back to ML classifier alone.
+	if s.useMLClassifier {
+		featureVector := s.featureExtractor.ToVector(features)
+		useLLM, confidence := s.classifier.Predict(featureVector)
+		decision.UseLLM = useLLM
+		decision.Confidence = confidence
+		if useLLM {
+			decision.Reason = fmt.Sprintf("ML classifier: LLM (%.2f)", confidence)
+		} else {
+			decision.Reason = fmt.Sprintf("ML classifier: SLM (%.2f)", confidence)
+		}
+		return decision
+	}
+
+	// Last resort: complexity threshold.
+	decision.UseLLM = features.ComplexityScore > s.config.ComplexityThreshold
+	decision.Confidence = 0.5
+	decision.Reason = "Complexity threshold fallback"
 	return decision
 }
 

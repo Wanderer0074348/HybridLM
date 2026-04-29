@@ -75,8 +75,11 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 
 	startTime := time.Now()
 
+	// X-No-Cache: true header bypasses all caching (useful for benchmarks)
+	noCache := c.GetHeader("X-No-Cache") == "true"
+
 	// Check semantic cache first if enabled
-	if h.useSemanticCache && h.semanticCache != nil {
+	if !noCache && h.useSemanticCache && h.semanticCache != nil {
 		semanticResult, err := h.semanticCache.GetSimilar(c.Request.Context(), req.Query, h.similarityThreshold)
 		if err == nil && semanticResult != nil {
 			// Found a semantically similar cached response
@@ -109,7 +112,7 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 	// Fall back to exact cache check
 	cacheKey := h.router.GenerateCacheKey(&req)
 	cachedResp, err := h.cache.Get(c.Request.Context(), cacheKey)
-	if err == nil && cachedResp != nil {
+	if !noCache && err == nil && cachedResp != nil {
 		cachedResp.CacheHit = true
 		cachedResp.Latency = time.Since(startTime)
 
@@ -227,11 +230,11 @@ func (h *InferenceHandler) HandleInference(c *gin.Context) {
 		}
 	}
 
-	// Cache the response
-	if h.useSemanticCache && h.semanticCache != nil {
+	// Cache the response (skipped when X-No-Cache: true)
+	if !noCache && h.useSemanticCache && h.semanticCache != nil {
 		// Store with embedding for semantic similarity search
 		_ = h.semanticCache.SetWithEmbedding(c.Request.Context(), cacheKey, req.Query, result)
-	} else {
+	} else if !noCache {
 		// Store with exact key only
 		_ = h.cache.Set(c.Request.Context(), cacheKey, result)
 	}
